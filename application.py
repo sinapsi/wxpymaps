@@ -37,9 +37,8 @@ baseurlmap={0: "http://mt1.google.com/vt/lyrs=m@132&hl=en",#default
 APP_NAME = "Application"
 MAP_TYPE=0 #numero tra 0 e 6
 DIR_CACHE = os.getcwd()+"/cache/"+str(MAP_TYPE)+"/"
-DOWNLOAD_THREAD_NUM =1
+DOWNLOAD_THREAD_NUM =3
 QUEUE_WAIT = 0.5
-
 
 
 #coda di tipo LIFO: se cambio livello di zoom vengono inseriti nella coda tile 
@@ -1131,6 +1130,10 @@ class PyMapFrame(wx.Frame):
         
 class PyMap(wx.App):
     def OnInit(self):
+        #create cache folder if it does not exist
+        d = os.path.dirname(DIR_CACHE)
+        if not os.path.exists(d):
+            os.makedirs(d)
         frame = PyMapFrame()
         frame.Show(1)
         self.SetTopWindow(frame)
