@@ -16,6 +16,8 @@
 #    You should have received a copy of the GNU General Public License
 #    along with wxpymaps.  If not, see <http://www.gnu.org/licenses/>.
 
+"""google maps client, with the possibility to use maps images offline"""
+
 import os
 import math
 import thread
@@ -23,16 +25,14 @@ import Queue
 import wx
 import wx.lib.newevent
 from wx.lib.buttons import GenBitmapButton, GenBitmapToggleButton
-
-
-import globalmaptiles
-import marker_dialog
-import path_dialog
 import urllib
 from PIL import Image
 from threading import Timer
 from xml.dom.minidom import Document
 
+import globalmaptiles
+import marker_dialog
+import path_dialog
 
 baseurlmap = {0: "http://mt1.google.com/vt/lyrs=m@132&hl=en",  # default
     1: "http://mt1.google.com/vt/lyrs=t",
@@ -63,16 +63,27 @@ tile_to_download = Queue.LifoQueue(maxsize=0)
 
 class Tile:
     """
-    Classe che definisce una tile
+    A tile is a 255*255 pixels png image
     """
 
     def __init__(self, x, y, zoom):
+        """
+        Tile constructior.
+        
+        Args:
+            x (int): x coordinate for this tile
+            y (int): y coordinate for this tile
+            zoom (int): zoom for this tile
+        """
         self.tile = x, y, zoom
         self.id = wx.NewId()
 
     def loadtile(self):
         """
-        se esiste (non corrotta) restituisce l'immagine riferita al tile
+        loads the image representing this tile (if already downloaded)
+        
+        Returns:
+            str.  image path
         """
         x, y, zoom = self.tile
         filename = DIR_CACHE + "/" + str(x) + "-" + str(y) + "-" + \
@@ -85,9 +96,9 @@ class Tile:
 
             except IOError:
                 #print "err"
-                return False
+                return None
         else:
-            return False
+            return None
 
     def drawlocaltile(self, frame, dc):
         """
@@ -105,7 +116,7 @@ class Tile:
         """dc.SetBrush(wx.GREY_BRUSH)
         dc.DrawRectangle(x*256,y*256,256,256)
         dc.DrawText(str(x)+","+str(y), x*256,y*256)"""
-        if(img is not False):
+        if(img is not None):
             self.image = wx.Image(img[0], wx.BITMAP_TYPE_ANY).ConvertToBitmap()
 
             a = dc.DrawBitmap(self.image, x * 256, y * 256, False)
@@ -1085,6 +1096,7 @@ class PyMap(wx.App):
         frame.Show(1)
         self.SetTopWindow(frame)
         return 1
+
 
 def main():
     app = PyMap()
