@@ -22,10 +22,11 @@ import os
 import math
 import thread
 import Queue
+import urllib
+import logging
 import wx
 import wx.lib.newevent
-from wx.lib.buttons import GenBitmapButton, GenBitmapToggleButton
-import urllib
+#from wx.lib.buttons import GenBitmapButton, GenBitmapToggleButton
 from PIL import Image
 from threading import Timer
 from xml.dom.minidom import Document
@@ -33,6 +34,10 @@ from xml.dom.minidom import Document
 import globalmaptiles
 import marker_dialog
 import path_dialog
+
+logging.basicConfig(filename='debug.log',
+        format='%(levelname)s:%(threadName)s:%(funcName)s: %(message)s',
+        level=logging.DEBUG)
 
 baseurlmap = {0: "http://mt1.google.com/vt/lyrs=m@132&hl=en",  # default
     1: "http://mt1.google.com/vt/lyrs=t",
@@ -69,7 +74,7 @@ class Tile:
     def __init__(self, x, y, zoom):
         """
         Tile constructior.
-        
+
         Args:
             x (int): x coordinate for this tile
             y (int): y coordinate for this tile
@@ -81,7 +86,7 @@ class Tile:
     def loadtile(self):
         """
         loads the image representing this tile (if already downloaded)
-        
+
         Returns:
             str.  image path
         """
@@ -94,8 +99,8 @@ class Tile:
                 cond = img.verify()
                 return [filename, ]
 
-            except IOError:
-                #print "err"
+            except IOError as detail:
+                logging.error("error: %s", detail)
                 return None
         else:
             return None
@@ -246,13 +251,13 @@ class LineString:
             if maxy < y:
                 maxy = y
 
-        #print "quadrato",minx,miny,maxx,maxy
+        logging.debug("quadrato %d, %d, %d, %d", minx, miny, maxx, maxy)
         dc.SetIdBounds(self.id, wx.Rect(minx, miny, maxx, maxy))
         dc.SetBrush(wx.GREY_BRUSH)
         #dc.DrawRectangle(min,min,max,max)
         dc.SetBrush(wx.BLACK_BRUSH)
         dc.DrawLines(coords, xoffset=0, yoffset=0)
-        #print "disegnato"
+        logging.debug("path drawn")
 
 # This creates a new Event class and a EVT binder function
 (DownloadImageEvent, EVT_DOWNLOAD_IMAGE) = wx.lib.newevent.NewEvent()
@@ -285,25 +290,27 @@ class DownloadThread:
         try:
             url = urllib.urlretrieve(url, filename)
             return url
-        except IOError:
+        except IOError as e:
             #offline
-            pass
+            logging.debug("image %s offline. %s", url, e)
 
     def Run(self):
         #for tile in tiles:
         while True:
-            #print self.name + " vivo"
+            logging.debug("t%s: begins loop", self.name)
             tile = tile_to_download.get()
-            #print self.name + " preso " + str(tile.tile)
+            logging.debug("t%s: tile %s taken from queue",
+                                    self.name, str(tile.tile))
             self.img = self.downloadtile(tile)
-            #print self.name + " scarico " + str(tile.tile)
+            logging.debug("t%s: downloading tile %s",
+                                    self.name, str(tile.tile))
             if(self.img is not False):
                 evt = DownloadImageEvent(downloaded_tile=tile)
                 wx.PostEvent(self.frame, evt)
-        #print self.name + " " + str(tile.tile) + " scaricato"
-            #print " " + self.name + " morto"
+                logging.debug("t%s: tile %s downloaded",
+                                    self.name, str(tile.tile))
             tile_to_download.task_done()
-
+            logging.debug("t%s: ends loop", self.name)
             #self.running = False
 
 
@@ -376,9 +383,9 @@ class PyMapFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnOpen, id=wx.ID_OPEN)
         self.Bind(wx.EVT_MENU, self.OnImport, id=idimport)
         self.Bind(wx.EVT_MENU, self.OnSave, id=wx.ID_SAVE)
-        self.Bind(wx.EVT_MENU, self.OnNuovopunto, id=wx.ID_ADD)
+        self.Bind(wx.EVT_MENU, self.OnNewPoint, id=wx.ID_ADD)
         self.Bind(wx.EVT_MENU, self.OnNewPath, id=ID_ADD_PATH)
-        self.Bind(wx.EVT_MENU, self.OnEsci, id=wx.ID_EXIT)
+        self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
 
         self.Bind(EVT_DOWNLOAD_IMAGE, self.OnDownload)
 
@@ -599,7 +606,7 @@ class PyMapFrame(wx.Frame):
 
         # Finisce le operazioni di disegno.
         dc.EndDrawing()
-        print "tile in memoria: " + str(len(self.tiles))
+        logging.debug("tile in memoria: %d", len(self.tiles))
 
     def Zoom(self, lat, lon, zoom, event=None):
         #svuoto la coda tile_to_download
@@ -640,16 +647,16 @@ class PyMapFrame(wx.Frame):
         xView, yView = self.sw.GetViewStart()
         xDelta, yDelta = self.sw.GetScrollPixelsPerUnit()
         x, y = (xCenter + xView * xDelta, yCenter + yView * yDelta)
-        print "x,y", x, y
+        logging.debug("x=%d, y=%d", x, y)
         lat, lon = mercator.pixels_to_lat_lon(x, y, self.zoom)
-        print "lat,lon", lat, lon
+        logging.debug("lat=%s, lon=%s", str(lat), str(lon))
         #self.slider.SetValue(self.zoom)
         #self.DoDrawing(self.pdc)
         self.zoom = self.slider.GetValue()
         #self.slider.SetValue(self.zoom)
         self.Zoom(lat, lon, self.zoom, event)
 
-    def OnNuovopunto(self, event):
+    def OnNewPoint(self, event):
         self.NewPointDialog(coords="38.132329,15.158815")
 
     """def NewPointDialog(self,coords):
@@ -670,7 +677,7 @@ class PyMapFrame(wx.Frame):
         dialog.coordinates.SetValue(coords)
         dialog.SetTitle("New Point")
         val = dialog.ShowModal()
-        print val
+        logging.debug("val=%s", str(val))
         if val == wx.ID_OK:
             coordinate = dialog.coordinates.GetValue()
             lat, lon = coordinate.split(",")
@@ -721,13 +728,13 @@ class PyMapFrame(wx.Frame):
             for node1 in name:
                 for n in node1.childNodes:
                     p_name = n.data.encode('utf8')
-                    print p_name
+                    logging.debug("p_name=%s", str(p_name))
 
             description = node.getElementsByTagName("description")
             for desc in description:
                 for des in desc.childNodes:
                     p_description = (des.data).encode('utf8')
-                    print p_description
+                    logging.debug("p_description=%s", str(p_description))
 
             point = node.getElementsByTagName("Point")
             if len(point) > 0:
@@ -824,7 +831,7 @@ class PyMapFrame(wx.Frame):
             dialog.description.SetValue(linestring.description)
             dialog.SetTitle("Edit LineString properties")
             val = dialog.ShowModal()
-            print val
+            logging.debug("val=%d", str(val))
             if val == dialog.ID_NEWPATH:
                 #coordinate=dialog.coordinates.GetValue()
                 #lat,lon = coordinate.split(",")
@@ -915,7 +922,7 @@ class PyMapFrame(wx.Frame):
         elif event.RightDown():
             x, y = self.ConvertEventCoords(event)
             l = self.pdc.FindObjects(x, y, 1)  # lista di id oggetti disegnati
-            print l
+            #print l
             found = False
             for id in l:
                 for m in self.markers:
@@ -1033,7 +1040,7 @@ class PyMapFrame(wx.Frame):
             coordinates.appendChild(doc.createTextNode(str(marker)))
 
         for l in self.LineStrings:
-            print "percorso"
+            #print "percorso"
             # Create the main <Placemark> element
             placemark = doc.createElement("Placemark")
             document.appendChild(placemark)
@@ -1081,7 +1088,7 @@ class PyMapFrame(wx.Frame):
             fp.close()
         dlg.Destroy()
 
-    def OnEsci(self, event):
+    def OnExit(self, event):
         # Distrugge il frame.
         self.Close(1)
 
