@@ -330,7 +330,8 @@ class PyMapFrame(wx.Frame):
         #self.sw.curLine = []
         #self.sw.drawing = False
 
-        wx.EVT_PAINT(self.sw, self.OnPaint)
+        #wx.EVT_PAINT(self.sw, self.OnPaint)
+        self.sw.Bind(wx.EVT_PAINT, self.OnPaint)
         #self.sw.Bind(wx.EVT_CONTEXT_MENU, self.OnContextMenuMarker)
         self.sw.Bind(wx.EVT_MOUSE_EVENTS, self.OnMouse)
         self.sw.Bind(wx.EVT_SCROLLWIN_THUMBRELEASE, self.OnScroll)
@@ -403,8 +404,8 @@ class PyMapFrame(wx.Frame):
 
         sizeX, sizeY = self.sw.GetSize()
         #self.sw.Scroll(sizeX/2, sizeY/2)
-        self.buffer = wx.EmptyBitmap(sizeX * 10, sizeY * 10)
-
+        #self.buffer = wx.EmptyBitmap(sizeX * 10, sizeY * 10)
+        self.buffer = wx.Bitmap.FromRGBA(sizeX * 10, sizeY * 10, red=0, green=0, blue=0, alpha=0)
         self.pdc = wx.adv.PseudoDC()
         self.DoDrawing(self.pdc)
 
@@ -507,7 +508,7 @@ class PyMapFrame(wx.Frame):
             newTile = evt.downloaded_tile
             #print "onDownload " + str(newTile.tile)
             dc = self.pdc
-            dc.BeginDrawing()
+            # dc.BeginDrawing() # deprecated
             newTile.drawlocaltile(self, dc)
             for m in self.markers:
                 m.draw(self, dc)
@@ -515,7 +516,7 @@ class PyMapFrame(wx.Frame):
                 p.draw(self, dc)
                 #points.append(m.getpixels(zoom))
             #dc.DrawLines(points, xoffset=0, yoffset=0)
-            dc.EndDrawing()
+            # dc.EndDrawing() #deprecated
             self.OnPaint(evt)
 
     def OnScroll(self, evt):
@@ -545,7 +546,7 @@ class PyMapFrame(wx.Frame):
 
         # Crea il DC e lo prepara per il disegno.
         #self.dc = wx.PaintDC(self.sw)
-        dc.BeginDrawing()
+        # dc.BeginDrawing() #deprecated
 
         # dalla dimensione della finestra e posizione  attuale, calcolo quali
         # tile devono essere disegnate
@@ -606,7 +607,7 @@ class PyMapFrame(wx.Frame):
             p.draw(self, dc)
 
         # Finisce le operazioni di disegno.
-        dc.EndDrawing()
+        # dc.EndDrawing() #deprecated
         logging.debug("tile in memoria: %d", len(self.tiles))
 
     def Zoom(self, lat, lon, zoom, event=None):
