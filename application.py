@@ -20,8 +20,8 @@
 
 import os
 import math
-import thread
-import Queue
+import _thread
+import queue
 import urllib
 import logging
 import wx
@@ -67,7 +67,7 @@ QUEUE_WAIT = 0.5
 
 # coda di tipo LIFO: se cambio livello di zoom vengono inseriti nella coda tile
 # relativi al nuovo livello di zoom, voglio che vengano mostrati prima questi
-tile_to_download = Queue.LifoQueue(maxsize=0)
+tile_to_download = queue.LifoQueue(maxsize=0)
 
 
 class Tile:
@@ -280,7 +280,7 @@ class DownloadThread:
 
     def Start(self):
         # self.keepGoing = self.running = True
-        thread.start_new_thread(self.Run, ())
+        _thread.start_new_thread(self.Run, ())
 
     def Stop(self):
         self.keepGoing = False
@@ -501,12 +501,12 @@ class PyMapFrame(wx.Frame):
         dx, dy = self.sw.GetScrollPixelsPerUnit()
         x, y = (xv * dx, yv * dy)
 
-        print "xy",x,y
+        print("xy",x,y)
         rgn = self.sw.GetUpdateRegion()
         # print "region",rgn
         rgn.Offset(x, y)
         sx, sy = self.sw.GetSize()
-        print "sx, sy", sx, sy
+        print("sx, sy", sx, sy)
         r = (x, y, sx, sy)
         # r = rgn.GetBox()
         # self.DoDrawing(self.pdc)
