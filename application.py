@@ -25,6 +25,7 @@ import Queue
 import urllib
 import logging
 import wx
+import wx.adv
 import wx.lib.newevent
 #from wx.lib.buttons import GenBitmapButton, GenBitmapToggleButton
 from PIL import Image
@@ -165,7 +166,6 @@ mercator = MyMercator()
 
 
 class Marker:
-    img = wx.Image("images/marker.png", wx.BITMAP_TYPE_ANY)
 
     def __init__(self, lat, lon, name="", description=""):
         self.lat = float(lat)
@@ -173,6 +173,7 @@ class Marker:
         self.name = name
         self.description = description
         self.id = wx.NewId()
+        img = wx.Image("images/marker.png", wx.BITMAP_TYPE_ANY)
 
     def __str__(self):
         return str(self.lon) + "," + str(self.lat) + ",0"
@@ -404,7 +405,7 @@ class PyMapFrame(wx.Frame):
         #self.sw.Scroll(sizeX/2, sizeY/2)
         self.buffer = wx.EmptyBitmap(sizeX * 10, sizeY * 10)
 
-        self.pdc = wx.PseudoDC()
+        self.pdc = wx.adv.PseudoDC()
         self.DoDrawing(self.pdc)
 
         self.CreateStatusBar()
