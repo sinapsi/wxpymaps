@@ -23,6 +23,7 @@ import math
 import _thread
 import queue
 import urllib
+import urllib.request
 import logging
 import wx
 import wx.adv
@@ -61,7 +62,7 @@ baseurlmap = {0: "http://mt1.google.com/vt/lyrs=m@132&hl=en",  # default
 APP_NAME = "Application"
 MAP_TYPE = 7  # numero tra 0 e 7
 DIR_CACHE = os.getcwd() + "/cache/" + str(MAP_TYPE) + "/"
-DOWNLOAD_THREAD_NUM = 2  # openstreetmap limits to 2 threads
+DOWNLOAD_THREAD_NUM = 1  # openstreetmap limits to 2 threads
 QUEUE_WAIT = 0.5
 
 
@@ -86,9 +87,11 @@ class Tile:
         """
         self.tile = x, y, zoom
         self.id = wx.NewId()
+        self.name = str(x) + "-" + str(y) + "-" + str(zoom)
 
         def __str__(self):
-            return self.x + "-" + self.y + "-" + self.zoom
+            x, y, z = self.tile
+            return x + "-" + y + "-" + z
 
     def loadtile(self):
         """
@@ -120,8 +123,6 @@ class Tile:
         """
         # disegno prima l'immagine dello zoom precedente, raddoppiata
         x, y, z = self.tile
-
-        x, y, _ = self.tile
         zoom = frame.zoom
         id = self.id
         dc.RemoveId(id)
@@ -140,6 +141,7 @@ class Tile:
             return True
         else:
             return False
+
 
 
 class MyMercator(globalmaptiles.GlobalMercator):
@@ -303,7 +305,7 @@ class DownloadThread:
         # print url
         try:
             #time.sleep(1)  # wait 1 second
-            url = urllib.urlretrieve(url, filename)
+            url = urllib.request.urlretrieve(url, filename)
             logging.debug("scaricato %s", url)
             return url
         except IOError as e:
@@ -323,9 +325,10 @@ class DownloadThread:
             if(self.img is not False):
                 evt = DownloadImageEvent(downloaded_tile=tile)
                 wx.PostEvent(self.frame, evt)
-                logging.debug("t%s: tile %s downloaded",
+                print("t%s: tile %s downloaded",
                               self.name, str(tile.tile))
             tile_to_download.task_done()
+
             logging.debug("t%s: ends loop", self.name)
             # self.running = False
 
@@ -347,6 +350,7 @@ class PyMapFrame(wx.Frame):
 
         # wx.EVT_PAINT(self.sw, self.OnPaint)
         self.sw.Bind(wx.EVT_PAINT, self.OnPaint)
+        self.sw.Bind(EVT_DOWNLOAD_IMAGE, self.OnPaint)
         # self.sw.Bind(wx.EVT_CONTEXT_MENU, self.OnContextMenuMarker)
         self.sw.Bind(wx.EVT_MOUSE_EVENTS, self.OnMouse)
         self.sw.Bind(wx.EVT_SCROLLWIN_THUMBRELEASE, self.OnScroll)
@@ -412,7 +416,7 @@ class PyMapFrame(wx.Frame):
         self.SetMenuBar(menuBar)
 
         # array in cui vengono salvati tiles, markers e percorsi
-        self.tiles = []
+        self.tiles = {}
         self.layers = []
         self.markers = []
         self.LineStrings = []
@@ -501,7 +505,7 @@ class PyMapFrame(wx.Frame):
         dx, dy = self.sw.GetScrollPixelsPerUnit()
         x, y = (xv * dx, yv * dy)
 
-        print("xy",x,y)
+        print("xy", x, y)
         rgn = self.sw.GetUpdateRegion()
         # print "region",rgn
         rgn.Offset(x, y)
@@ -510,8 +514,8 @@ class PyMapFrame(wx.Frame):
         r = (x, y, sx, sy)
         # r = rgn.GetBox()
         # self.DoDrawing(self.pdc)
-        #self.pdc.DrawToDCClipped(dc, r)
-        self.pdc.DrawToDC(dc)
+        self.pdc.DrawToDCClipped(dc, r)
+        # self.pdc.DrawToDC(dc)
         # print "linee",self.LineStrings
         """for l in self.LineStrings:
             print l.path"""
@@ -527,6 +531,7 @@ class PyMapFrame(wx.Frame):
             dc = self.pdc
             # dc.BeginDrawing() # deprecated
             newTile.drawlocaltile(self, dc)
+
             for m in self.markers:
                 m.draw(self, dc)
             for p in self.LineStrings:
@@ -534,7 +539,7 @@ class PyMapFrame(wx.Frame):
                 # points.append(m.getpixels(zoom))
             #dc.DrawLines(points, xoffset=0, yoffset=0)
             # dc.EndDrawing() #deprecated
-            self.OnPaint(evt)
+            #self.OnPaint(evt)
 
     def OnScroll(self, evt):
         """if(evt.GetPosition()==wx.HORIZONTAL):
@@ -542,7 +547,7 @@ class PyMapFrame(wx.Frame):
         if(evt.GetPosition()==wx.VERTICAL):
             print "verticale"""
         self.DoDrawing(self.pdc)
-        self.OnPaint(evt)
+        # self.OnPaint(evt)
 
     def put_tile_in_queue(self, tile):
         """
@@ -576,29 +581,35 @@ class PyMapFrame(wx.Frame):
         # dc.BeginDrawing()
         # prima stampo le tile del livello di zoom precedente, scalate * 2
         for index, zoom in enumerate([zoom-1, zoom]):
-            logging.debug("ciclo disegnamappa %d", index)
+            print("ciclo disegnamappa %d", index)
             if(zoom >= 0):
 
 
                 maxX, maxY = self.sw.GetSize()
+                print("minX: " + str(minX) + " minY: " + str(minY) + " maxX: " + str(maxX) + " maxY: " + str(maxY))
 
                 scale = 2 - index
-                if(maxX > 2 ** zoom):
-                    maxX = 2 ** zoom
-                if(maxY > 2 ** zoom):
-                    maxY = 2 ** zoom
-                if(minX > maxX):
-                    minX = maxX-4
-                    if (minX < 0):
-                        minX = 0
-                if(minY > maxY):
-                    minY = maxY-4
-                    if (minY < 0):
-                        minY = 0
-                logging.debug("minX %d, minY %d, maxX %d, maxY %d",minX, minY, maxX, maxY)
+                widthPxMap = 2**zoom*256
+                heightPxMap = 2**zoom*256
+                
+                # calcolo quanti tile devono essere scaricati
+                numberOfTilesToDrawX = math.ceil(maxX / 256)
+                numberOfTilesToDrawX = min(numberOfTilesToDrawX, 2**zoom)
+                
+                # calcolo l'indice del primo tile da scaricare
+                firstTileToDrawX = math.floor(minX / 256)
+
+                # calcolo quanti tile devono essere scaricati
+                numberOfTilesToDrawY = math.ceil(maxY / 256)
+                numberOfTilesToDrawY = min(numberOfTilesToDrawY, 2**zoom)
+                
+                # calcolo l'indice del primo tile da scaricare
+                firstTileToDrawY = math.floor(minY / 256)
+
+                print("firstTileToDrawX: " + str(firstTileToDrawX) + " firstTileToDrawY: " + str(firstTileToDrawY) + " numberOfTilesToDrawX: " + str(numberOfTilesToDrawX) + " numberOfTilesToDrawY: " + str(numberOfTilesToDrawY))
                 found = False
-                for x in range(minX, maxX):
-                    for y in range(minY, maxY):
+                for x in range(firstTileToDrawX, firstTileToDrawX + numberOfTilesToDrawX):
+                    for y in range(firstTileToDrawY, firstTileToDrawY + numberOfTilesToDrawY):
 
                         # controllo se il tile e' gia' stato disegnato
 
@@ -607,13 +618,18 @@ class PyMapFrame(wx.Frame):
 
                         # print "creato",newTile.tile
 
-                        # se riesco a disegnarlo, lo metto nel vettore
+                        # se riesco a disegnarlo, lo metto nel dizionario (se non c'è già)
                         if tile.drawlocaltile(self, dc, scale):
-                            self.tiles.append(tile)
+                            if tile.name not in self.tiles:
+                                self.tiles[tile.name] = tile
+                                logging.debug("tile " + str(tile.name) + " aggiunto al dizionario")
+                            else:
+                                logging.debug("tile " + str(tile.name) + " già nel dizionario")
                         else:
                             # aggiungo alla coda il tile da scaricare aspettando
                             # QUEUE_WAIT secondi
                             #if(not tile_to_download.full()):
+                            
 
                             t = Timer(QUEUE_WAIT, self.put_tile_in_queue,
                                       args=[tile, ])
@@ -634,12 +650,13 @@ class PyMapFrame(wx.Frame):
 
         # Finisce le operazioni di disegno.
         # dc.EndDrawing() #deprecated
-        logging.debug("tile in memoria: %d", len(self.tiles))
+        print("tile in memoria: %d", len(self.tiles))
 
     def Zoom(self, lat, lon, zoom, event=None):
         """metodo chiamato quando si esegue lo zoom"""
         # elimino tile di troppo dal dictionary
-        self.tiles = []
+        del(self.tiles)
+        self.tiles = {}
         self.pdc.RemoveAll()
         """for t in self.tiles:
             self.pdc.RemoveId(t.id)
@@ -656,15 +673,15 @@ class PyMapFrame(wx.Frame):
         self.sw.SetScrollRate(20, 20)
         # self.DoDrawing(self.pdc)
         self.LookAt(lat, lon, self.zoom)
-        # self.DoDrawing(self.pdc)
-        self.OnPaint(event)
+        self.DoDrawing(self.pdc)
+        # self.OnPaint(event)
 
     def OnSlide(self, event):
         """
         metodo chiamato quando si muove lo slider: cambia il livello dello
         zoom centrando mantenendo lo stesso centro dell'immagine
         """
-        self.tiles = []
+        # self.tiles = []
         xFrame, yFrame = self.sw.GetSize()
         xCenter = xFrame / 2
         yCenter = yFrame / 2
@@ -826,7 +843,7 @@ class PyMapFrame(wx.Frame):
             self.pdc.ClearId(id)
             self.markers.remove(marker)
             menu.Destroy
-            self.OnPaint(event)
+            # self.OnPaint(event)
 
         #self.Bind(wx.EVT_MENU, self.Ondelete, id=self.popupID1)
         self.Bind(wx.EVT_MENU, UpdateMarkerDialog, id=self.popupID1)
@@ -872,7 +889,7 @@ class PyMapFrame(wx.Frame):
             self.pdc.ClearId(id)
             self.LineStrings.remove(linestring)
             menu.Destroy
-            self.OnPaint(event)
+            # self.OnPaint(event)
 
         #self.Bind(wx.EVT_MENU, self.Ondelete, id=self.popupID1)
         self.Bind(wx.EVT_MENU, UpdateLineStringDialog, id=self.popupID1)
@@ -896,7 +913,7 @@ class PyMapFrame(wx.Frame):
         def OnNewPoint(event, coord=coord):
             self.NewPointDialog(coord)
             menu.Destroy
-            self.OnPaint(event)
+            # self.OnPaint(event)
 
         self.Bind(wx.EVT_MENU, OnNewPoint, id=self.popupIDnew)
         # make a menu
@@ -941,7 +958,7 @@ class PyMapFrame(wx.Frame):
                 l = self.pdc.FindObjects(x, y, 5)
 
                 self.DoDrawing(self.pdc)
-            self.OnPaint(event)
+            # self.OnPaint(event)
 
         elif event.RightDown():
             x, y = self.ConvertEventCoords(event)
@@ -1008,7 +1025,7 @@ class PyMapFrame(wx.Frame):
                 self.load_kml(pat)
         dlg.Destroy()
         self.DoDrawing(self.pdc)
-        self.OnPaint(event)
+        # self.OnPaint(event)
 
     def OnOpen(self, event):
         # self.OnNew(event)
@@ -1020,7 +1037,7 @@ class PyMapFrame(wx.Frame):
             self.pdc.RemoveId(m.id)
             self.pdc.ClearId(m.id)
         self.markers = []
-        self.OnPaint(event)
+        # self.OnPaint(event)
 
         for l in self.LineStrings:
             self.pdc.RemoveId(l.id)
