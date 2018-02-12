@@ -19,6 +19,7 @@
 """google maps client, with the possibility to use maps images offline"""
 
 import os
+#import time
 import math
 import _thread
 import queue
@@ -59,10 +60,11 @@ baseurlmap = {0: "http://mt1.google.com/vt/lyrs=m@132&hl=en",  # default
     7: "http://a.tile.openstreetmap.org"
 }
 
+CWD = os.getcwd()
 APP_NAME = "Application"
 MAP_TYPE = 7  # numero tra 0 e 7
-DIR_CACHE = os.getcwd() + "/cache/" + str(MAP_TYPE) + "/"
-DOWNLOAD_THREAD_NUM = 1  # openstreetmap limits to 2 threads
+DIR_CACHE = CWD + "/cache/" + str(MAP_TYPE) + "/"
+DOWNLOAD_THREAD_NUM = 2  # openstreetmap limits to 2 threads
 QUEUE_WAIT = 0.5
 
 
@@ -184,7 +186,7 @@ class Marker:
         self.name = name
         self.description = description
         self.id = wx.NewId()
-        self.img = wx.Image("images/marker.png", wx.BITMAP_TYPE_ANY)
+        self.img = wx.Image(CWD + "/images/marker.png", wx.BITMAP_TYPE_ANY)
 
     def __str__(self):
         return str(self.lon) + "," + str(self.lat) + ",0"
@@ -317,16 +319,21 @@ class DownloadThread:
         while True:
             logging.debug("t%s: begins loop", self.name)
             tile = tile_to_download.get()
-            logging.debug("t%s: tile %s taken from queue",
-                          self.name, str(tile.tile))
-            self.img = self.downloadtile(tile)
-            logging.debug("t%s: downloading tile %s",
-                          self.name, str(tile.tile))
-            if(self.img is not False):
-                evt = DownloadImageEvent(downloaded_tile=tile)
-                wx.PostEvent(self.frame, evt)
-                print("t%s: tile %s downloaded",
+            logging.debug("devo scaricare "+ tile.name+"?")
+            img = tile.loadtile()
+            if(img == None):
+                logging.debug("t%s: tile %s taken from queue",
                               self.name, str(tile.tile))
+                self.img = self.downloadtile(tile)
+                logging.debug("t%s: downloading tile %s",
+                              self.name, str(tile.tile))
+                if(self.img is not False):
+                    evt = DownloadImageEvent(downloaded_tile=tile)
+                    wx.PostEvent(self.frame, evt)
+                    print("t%s: tile %s downloaded",
+                                  self.name, str(tile.tile))
+            else:
+                logging.debug(self.name + " non scaricato")
             tile_to_download.task_done()
 
             logging.debug("t%s: ends loop", self.name)
@@ -350,7 +357,7 @@ class PyMapFrame(wx.Frame):
 
         # wx.EVT_PAINT(self.sw, self.OnPaint)
         self.sw.Bind(wx.EVT_PAINT, self.OnPaint)
-        self.sw.Bind(EVT_DOWNLOAD_IMAGE, self.OnPaint)
+        # self.sw.Bind(EVT_DOWNLOAD_IMAGE, self.Refresh)
         # self.sw.Bind(wx.EVT_CONTEXT_MENU, self.OnContextMenuMarker)
         self.sw.Bind(wx.EVT_MOUSE_EVENTS, self.OnMouse)
         self.sw.Bind(wx.EVT_SCROLLWIN_THUMBRELEASE, self.OnScroll)
@@ -500,7 +507,7 @@ class PyMapFrame(wx.Frame):
         # self.DoDrawing(self.pdc)
         dc = wx.BufferedPaintDC(self.sw)
         self.sw.PrepareDC(dc)
-        dc.Clear()
+        #dc.Clear()
         xv, yv = self.sw.GetViewStart()
         dx, dy = self.sw.GetScrollPixelsPerUnit()
         x, y = (xv * dx, yv * dy)
@@ -540,6 +547,7 @@ class PyMapFrame(wx.Frame):
             #dc.DrawLines(points, xoffset=0, yoffset=0)
             # dc.EndDrawing() #deprecated
             #self.OnPaint(evt)
+            self.Refresh()
 
     def OnScroll(self, evt):
         """if(evt.GetPosition()==wx.HORIZONTAL):
@@ -594,14 +602,14 @@ class PyMapFrame(wx.Frame):
                 
                 # calcolo quanti tile devono essere scaricati
                 numberOfTilesToDrawX = math.ceil(maxX / 256)
-                numberOfTilesToDrawX = min(numberOfTilesToDrawX, 2**zoom)
+                numberOfTilesToDrawX = min(numberOfTilesToDrawX + 1, 2**zoom)
                 
                 # calcolo l'indice del primo tile da scaricare
                 firstTileToDrawX = math.floor(minX / 256)
 
                 # calcolo quanti tile devono essere scaricati
                 numberOfTilesToDrawY = math.ceil(maxY / 256)
-                numberOfTilesToDrawY = min(numberOfTilesToDrawY, 2**zoom)
+                numberOfTilesToDrawY = min(numberOfTilesToDrawY + 1, 2**zoom)
                 
                 # calcolo l'indice del primo tile da scaricare
                 firstTileToDrawY = math.floor(minY / 256)
@@ -630,15 +638,15 @@ class PyMapFrame(wx.Frame):
                             # QUEUE_WAIT secondi
                             #if(not tile_to_download.full()):
                             
-
-                            t = Timer(QUEUE_WAIT, self.put_tile_in_queue,
-                                      args=[tile, ])
+                            t = Timer(QUEUE_WAIT, self.put_tile_in_queue, args=[tile, ])
                             t.start()
 
                             # tile_to_download.put(newTile)
                             # print "messo",newTile.tile
                         # print x,y
                         found = False
+                    self.Refresh()
+            
 
         # disegno i markers
         for m in self.markers:
@@ -650,7 +658,9 @@ class PyMapFrame(wx.Frame):
 
         # Finisce le operazioni di disegno.
         # dc.EndDrawing() #deprecated
-        print("tile in memoria: %d", len(self.tiles))
+        logging.debug("tile in memoria: %d", len(self.tiles))
+        #time.sleep(0.5)
+        self.Refresh()
 
     def Zoom(self, lat, lon, zoom, event=None):
         """metodo chiamato quando si esegue lo zoom"""
@@ -727,6 +737,7 @@ class PyMapFrame(wx.Frame):
             newMarker = Marker(lat, lon, name, description)
             self.markers.append(newMarker)
             newMarker.draw(self, self.pdc)
+        self.Refresh()
         dialog.Destroy()
 
     def OnNewPath(self, event):
@@ -784,8 +795,8 @@ class PyMapFrame(wx.Frame):
                     for node3 in coordinates:
                         for node4 in node3.childNodes:
                             p_coordinates = node4.data.encode('utf8')
-                            # print p_coordinates
-                            lon, lat, hi = p_coordinates.split(",")
+                            logging.debug(p_coordinates)
+                            lon, lat, hi = p_coordinates.split(b",")
                             newMarker = Marker(lat, lon, p_name, p_description)
                             self.markers.append(newMarker)
                             newMarker.draw(self, self. pdc)
@@ -798,14 +809,14 @@ class PyMapFrame(wx.Frame):
                     for node3 in coordinates:
                         for node4 in node3.childNodes:
                             p_coordinates = node4.data.encode('utf8')
-                            co = p_coordinates.split("\n")
-                            # print "righe",co
+                            co = p_coordinates.split(b"\n")
+                            # logging.debug("righe",co)
                             for p in co:
                                 if(p.strip() != ""):
                                     # print "riga",p
-                                    lon, lat, hi = p.split(",")
-                                    newpath.append((float(lat), float(lon)))
-                                    # print newpath
+                                    if(p != b""):
+                                        lon, lat, hi = p.split(b",")
+                                        newpath.append((float(lat), float(lon)))
                     newLineString = LineString(path=newpath)
                     self.LineStrings.append(newLineString)
 
@@ -834,7 +845,8 @@ class PyMapFrame(wx.Frame):
                 marker.description = dialog.description.GetValue()
                 # newMarker=Marker(lat,lon,name,description)
                 # self.markers.append(newMarker)
-                # marker.draw(self,self.pdc)
+                marker.draw(self,self.pdc)
+                self.Refresh()
             dialog.Destroy()
 
         def Ondelete(event, marker=marker):
@@ -1013,7 +1025,7 @@ class PyMapFrame(wx.Frame):
             #defaultDir = os.getcwd(),
             defaultFile="",
             wildcard=wildcard,
-            style=wx.OPEN | wx.MULTIPLE | wx.CHANGE_DIR
+            style=wx.FD_OPEN | wx.FD_MULTIPLE | wx.FD_CHANGE_DIR
         )
         if dlg.ShowModal() == wx.ID_OK:
             # This returns a Python list of files that were selected.
@@ -1116,19 +1128,22 @@ class PyMapFrame(wx.Frame):
         return doc.toxml()
 
     def OnSave(self, event):
-        wildcard = "KML file (*.kml)|*.kml|"        \
-           "All files (*.*)|*.*"
-        dlg = wx.FileDialog(self, message="Save file as ...",
-            defaultDir=os.getcwd(), defaultFile="", wildcard=wildcard,
-            style=wx.SAVE)
-        if dlg.ShowModal() == wx.ID_OK:
-            path = dlg.GetPath()
-            fp = file(path, 'w')
-            data = self.create_kml()
-            fp.write(data)
-            fp.close()
-        dlg.Destroy()
+        with wx.FileDialog(self, "Save XYZ file", wildcard="KML file (*.kml)|*.kml",
+                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as fileDialog:
 
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return     # the user changed their mind
+
+            # save the current contents in the file
+            pathname = fileDialog.GetPath()
+            try:
+                with open(pathname, 'w') as file:
+                    data = self.create_kml()
+                    file.write(data)
+            except IOError:
+                wx.LogError("Cannot save current data in file '%s'." % pathname)
+        
+        
     def OnExit(self, event):
         # Distrugge il frame.
         self.Close(1)
