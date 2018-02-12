@@ -38,7 +38,7 @@ import globalmaptiles
 import marker_dialog
 import path_dialog
 
-logging.basicConfig(filename='debug.log',
+logging.basicConfig(# filename='debug.log',
         format='%(levelname)s:%(threadName)s:%(funcName)s: %(message)s',
         level=logging.DEBUG)
 
@@ -330,7 +330,7 @@ class DownloadThread:
                 if(self.img is not False):
                     evt = DownloadImageEvent(downloaded_tile=tile)
                     wx.PostEvent(self.frame, evt)
-                    print("t%s: tile %s downloaded",
+                    logging.debug("t%s: tile %s downloaded",
                                   self.name, str(tile.tile))
             else:
                 logging.debug(self.name + " non scaricato")
@@ -491,20 +491,6 @@ class PyMapFrame(wx.Frame):
         self.LookAt(lat, lon, self.zoom)
 
     def OnPaint(self, event):
-        # print "(" + str(minX) + "," + str(minY) + ") \
-        #   (" + str(maxX) + "," + str(maxY) + ")"
-        # print self.sw.GetViewStart()
-        # print self.sw.CalcUnscrolledPosition((0,0))
-        # print self.sw.GetSize()
-        # print self.sw.GetScrollPixelsPerUnit()
-
-        #dc = wx.BufferedPaintDC(self.sw, self.buffer, wx.BUFFER_VIRTUAL_AREA)
-
-        # if(minX > 0 and minY > 0):
-        # dc1=wx.PaintDC(self.sw)
-        # self.sw.DoPrepareDC(dc1)
-        # self.DoDrawing(dc1)
-        # self.DoDrawing(self.pdc)
         dc = wx.BufferedPaintDC(self.sw)
         self.sw.PrepareDC(dc)
         #dc.Clear()
@@ -512,20 +498,14 @@ class PyMapFrame(wx.Frame):
         dx, dy = self.sw.GetScrollPixelsPerUnit()
         x, y = (xv * dx, yv * dy)
 
-        print("xy", x, y)
+        # logging.debug("xy", x, y)
         rgn = self.sw.GetUpdateRegion()
         # print "region",rgn
         rgn.Offset(x, y)
         sx, sy = self.sw.GetSize()
-        print("sx, sy", sx, sy)
+        # logging.debug("sx, sy", sx, sy)
         r = (x, y, sx, sy)
-        # r = rgn.GetBox()
-        # self.DoDrawing(self.pdc)
         self.pdc.DrawToDCClipped(dc, r)
-        # self.pdc.DrawToDC(dc)
-        # print "linee",self.LineStrings
-        """for l in self.LineStrings:
-            print l.path"""
 
     def OnDownload(self, evt):
         """
@@ -589,12 +569,12 @@ class PyMapFrame(wx.Frame):
         # dc.BeginDrawing()
         # prima stampo le tile del livello di zoom precedente, scalate * 2
         for index, zoom in enumerate([zoom-1, zoom]):
-            print("ciclo disegnamappa %d", index)
+            # logging.debug("ciclo disegnamappa %d", index)
             if(zoom >= 0):
 
 
                 maxX, maxY = self.sw.GetSize()
-                print("minX: " + str(minX) + " minY: " + str(minY) + " maxX: " + str(maxX) + " maxY: " + str(maxY))
+                # logging.debug("minX: " + str(minX) + " minY: " + str(minY) + " maxX: " + str(maxX) + " maxY: " + str(maxY))
 
                 scale = 2 - index
                 widthPxMap = 2**zoom*256
@@ -614,7 +594,7 @@ class PyMapFrame(wx.Frame):
                 # calcolo l'indice del primo tile da scaricare
                 firstTileToDrawY = math.floor(minY / 256)
 
-                print("firstTileToDrawX: " + str(firstTileToDrawX) + " firstTileToDrawY: " + str(firstTileToDrawY) + " numberOfTilesToDrawX: " + str(numberOfTilesToDrawX) + " numberOfTilesToDrawY: " + str(numberOfTilesToDrawY))
+                # logging.debug("firstTileToDrawX: " + str(firstTileToDrawX) + " firstTileToDrawY: " + str(firstTileToDrawY) + " numberOfTilesToDrawX: " + str(numberOfTilesToDrawX) + " numberOfTilesToDrawY: " + str(numberOfTilesToDrawY))
                 found = False
                 for x in range(firstTileToDrawX, firstTileToDrawX + numberOfTilesToDrawX):
                     for y in range(firstTileToDrawY, firstTileToDrawY + numberOfTilesToDrawY):
@@ -854,6 +834,7 @@ class PyMapFrame(wx.Frame):
             self.pdc.RemoveId(id)
             self.pdc.ClearId(id)
             self.markers.remove(marker)
+            self.Refresh()
             menu.Destroy
             # self.OnPaint(event)
 
@@ -969,7 +950,7 @@ class PyMapFrame(wx.Frame):
                 # self.Zoom(self.zoom,lat,lon)
                 l = self.pdc.FindObjects(x, y, 5)
 
-                self.DoDrawing(self.pdc)
+                # self.DoDrawing(self.pdc)
             # self.OnPaint(event)
 
         elif event.RightDown():
