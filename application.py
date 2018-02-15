@@ -23,6 +23,7 @@ import os
 import math
 import _thread
 import queue
+import collections
 import urllib
 import urllib.request
 import logging
@@ -64,7 +65,7 @@ CWD = os.getcwd()
 APP_NAME = "Application"
 MAP_TYPE = 7  # numero tra 0 e 7
 DIR_CACHE = CWD + "/cache/" + str(MAP_TYPE) + "/"
-DOWNLOAD_THREAD_NUM = 2  # openstreetmap limits to 2 threads
+DOWNLOAD_THREAD_NUM = 1  # openstreetmap limits to 2 threads
 QUEUE_WAIT = 0.5
 
 
@@ -265,20 +266,20 @@ class LineString:
             if maxy < y:
                 maxy = y
 
-        logging.debug("quadrato %d, %d, %d, %d", minx, miny, maxx, maxy)
+        # logging.debug("quadrato %d, %d, %d, %d", minx, miny, maxx, maxy)
         dc.SetIdBounds(self.id, wx.Rect(minx, miny, maxx, maxy))
         dc.SetBrush(wx.GREY_BRUSH)
         # dc.DrawRectangle(min,min,max,max)
         dc.SetBrush(wx.BLACK_BRUSH)
         dc.DrawLines(coords, xoffset=0, yoffset=0)
-        logging.debug("path drawn")
+        # logging.debug("path drawn")
 
 # This creates a new Event class and a EVT binder function
 (DownloadImageEvent, EVT_DOWNLOAD_IMAGE) = wx.lib.newevent.NewEvent()
 
 
 class DownloadThread:
-
+    nodownload = [] #static list, common to all threads
     def __init__(self, frame):
         self.frame = frame
 
@@ -301,42 +302,41 @@ class DownloadThread:
             param = "&x=" + x + "&y=" + y + "&z=" + zoom
 
         url = baseurlmap[MAP_TYPE] + param
-        logging.debug("url immagine da scaricare: %s", url)
+        # logging.debug("url immagine da scaricare: %s", url)
         filename = DIR_CACHE + "/" + x + "-" + y + "-" + zoom + ".png"
         # if (os.path.exists(filename)==False):
         # print url
         try:
             #time.sleep(1)  # wait 1 second
             url = urllib.request.urlretrieve(url, filename)
-            logging.debug("scaricato %s", url)
+            # logging.debug("scaricato %s", url)
             return url
         except IOError as e:
             # offline
+            self.nodownload.append(tile.name)
             logging.debug("image %s offline. %s", url, e)
 
     def Run(self):
         # for tile in tiles:
         while True:
-            logging.debug("t%s: begins loop", self.name)
+            # logging.debug("t%s: begins loop", self.name)
             tile = tile_to_download.get()
-            logging.debug("devo scaricare "+ tile.name+"?")
+            # logging.debug("devo scaricare "+ tile.name+"?")
             img = tile.loadtile()
-            if(img == None):
-                logging.debug("t%s: tile %s taken from queue",
-                              self.name, str(tile.tile))
+            if(img == None and tile.name not in self.nodownload):
+                # logging.debug("t%s: tile %s taken from queue", self.name, str(tile.tile))
                 self.img = self.downloadtile(tile)
-                logging.debug("t%s: downloading tile %s",
-                              self.name, str(tile.tile))
+                # logging.debug("t%s: downloading tile %s", self.name, str(tile.tile))
                 if(self.img is not False):
                     evt = DownloadImageEvent(downloaded_tile=tile)
                     wx.PostEvent(self.frame, evt)
-                    logging.debug("t%s: tile %s downloaded",
-                                  self.name, str(tile.tile))
+                    # logging.debug("t%s: tile %s downloaded", self.name, str(tile.tile))
             else:
                 logging.debug(self.name + " non scaricato")
+                logging.debug("len(self.nodownload): " + str(len(self.nodownload)))
             tile_to_download.task_done()
 
-            logging.debug("t%s: ends loop", self.name)
+            # logging.debug("t%s: ends loop", self.name)
             # self.running = False
 
 
@@ -422,8 +422,8 @@ class PyMapFrame(wx.Frame):
         menuBar.Append(insertmenu, "&Insert")
         self.SetMenuBar(menuBar)
 
-        # array in cui vengono salvati tiles, markers e percorsi
-        self.tiles = {}
+        # strutture dati in cui vengono salvati tiles, markers e percorsi
+        self.tiles = collections.OrderedDict() # oldest tiles are deleted first
         self.layers = []
         self.markers = []
         self.LineStrings = []
@@ -596,36 +596,48 @@ class PyMapFrame(wx.Frame):
 
                 # logging.debug("firstTileToDrawX: " + str(firstTileToDrawX) + " firstTileToDrawY: " + str(firstTileToDrawY) + " numberOfTilesToDrawX: " + str(numberOfTilesToDrawX) + " numberOfTilesToDrawY: " + str(numberOfTilesToDrawY))
                 found = False
+                
+                BufferSize = numberOfTilesToDrawX * numberOfTilesToDrawY
                 for x in range(firstTileToDrawX, firstTileToDrawX + numberOfTilesToDrawX):
                     for y in range(firstTileToDrawY, firstTileToDrawY + numberOfTilesToDrawY):
 
                         # controllo se il tile e' gia' stato disegnato
 
-                        tile = Tile(x, y, zoom)
-
-
-                        # print "creato",newTile.tile
-
-                        # se riesco a disegnarlo, lo metto nel dizionario (se non c'è già)
-                        if tile.drawlocaltile(self, dc, scale):
-                            if tile.name not in self.tiles:
-                                self.tiles[tile.name] = tile
-                                logging.debug("tile " + str(tile.name) + " aggiunto al dizionario")
-                            else:
-                                logging.debug("tile " + str(tile.name) + " già nel dizionario")
+                        
+                        
+                        chiave_tile = str(x) + "-" + str(y) + "-" + str(zoom)
+                        
+                        if chiave_tile in self.tiles:
+                            tile = self.tiles[chiave_tile]
+                            logging.debug("     "+chiave_tile + " già nel dizionario")
                         else:
-                            # aggiungo alla coda il tile da scaricare aspettando
-                            # QUEUE_WAIT secondi
-                            #if(not tile_to_download.full()):
-                            
-                            t = Timer(QUEUE_WAIT, self.put_tile_in_queue, args=[tile, ])
-                            t.start()
+                            tile = Tile(x, y, zoom)
 
-                            # tile_to_download.put(newTile)
-                            # print "messo",newTile.tile
-                        # print x,y
+
+                            # print "creato",newTile.tile
+
+                            # se riesco a disegnarlo, lo metto nel dizionario (se non c'è già)
+                            if tile.drawlocaltile(self, dc, scale):
+                                if tile.name not in self.tiles:
+                                    self.tiles[tile.name] = tile
+                                    if(len(self.tiles) > BufferSize):
+                                        self.tiles.popitem(False)
+                                    # logging.debug("tile " + str(tile.name) + " aggiunto al dizionario")
+                                # else:
+                                    # logging.debug("tile " + str(tile.name) + " già nel dizionario")
+                            else:
+                                # aggiungo alla coda il tile da scaricare aspettando
+                                # QUEUE_WAIT secondi
+                                #if(not tile_to_download.full()):
+                                
+                                t = Timer(QUEUE_WAIT, self.put_tile_in_queue, args=[tile, ])
+                                t.start()
+
+                                # tile_to_download.put(newTile)
+                                # print "messo",newTile.tile
+                            # print x,y
                         found = False
-                    self.Refresh()
+                #self.Refresh()
             
 
         # disegno i markers
@@ -646,7 +658,7 @@ class PyMapFrame(wx.Frame):
         """metodo chiamato quando si esegue lo zoom"""
         # elimino tile di troppo dal dictionary
         del(self.tiles)
-        self.tiles = {}
+        self.tiles = collections.OrderedDict()
         self.pdc.RemoveAll()
         """for t in self.tiles:
             self.pdc.RemoveId(t.id)
@@ -665,6 +677,7 @@ class PyMapFrame(wx.Frame):
         self.LookAt(lat, lon, self.zoom)
         self.DoDrawing(self.pdc)
         # self.OnPaint(event)
+        self.Refresh()
 
     def OnSlide(self, event):
         """
@@ -678,14 +691,14 @@ class PyMapFrame(wx.Frame):
         xView, yView = self.sw.GetViewStart()
         xDelta, yDelta = self.sw.GetScrollPixelsPerUnit()
         x, y = (xCenter + xView * xDelta, yCenter + yView * yDelta)
-        logging.debug("x=%d, y=%d", x, y)
+        # logging.debug("x=%d, y=%d", x, y)
         lat, lon = mercator.pixels_to_lat_lon(x, y, self.zoom)
-        logging.debug("lat=%s, lon=%s", str(lat), str(lon))
+        # logging.debug("lat=%s, lon=%s", str(lat), str(lon))
         # self.slider.SetValue(self.zoom)
         # self.DoDrawing(self.pdc)
-        self.zoom = self.slider.GetValue()
+        zoom = self.slider.GetValue()
         # self.slider.SetValue(self.zoom)
-        self.Zoom(lat, lon, self.zoom, event)
+        self.Zoom(lat, lon, zoom, event)
 
     def OnNewPoint(self, event):
         self.NewPointDialog(coords="38.132329,15.158815")
@@ -708,7 +721,7 @@ class PyMapFrame(wx.Frame):
         dialog.coordinates.SetValue(coords)
         dialog.SetTitle("New Point")
         val = dialog.ShowModal()
-        logging.debug("val=%s", str(val))
+        # logging.debug("val=%s", str(val))
         if val == wx.ID_OK:
             coordinate = dialog.coordinates.GetValue()
             lat, lon = coordinate.split(",")
@@ -760,13 +773,13 @@ class PyMapFrame(wx.Frame):
             for node1 in name:
                 for n in node1.childNodes:
                     p_name = n.data.encode('utf8')
-                    logging.debug("p_name=%s", str(p_name))
+                    # logging.debug("p_name=%s", str(p_name))
 
             description = node.getElementsByTagName("description")
             for desc in description:
                 for des in desc.childNodes:
                     p_description = (des.data).encode('utf8')
-                    logging.debug("p_description=%s", str(p_description))
+                    # logging.debug("p_description=%s", str(p_description))
 
             point = node.getElementsByTagName("Point")
             if len(point) > 0:
@@ -775,7 +788,7 @@ class PyMapFrame(wx.Frame):
                     for node3 in coordinates:
                         for node4 in node3.childNodes:
                             p_coordinates = node4.data.encode('utf8')
-                            logging.debug(p_coordinates)
+                            # logging.debug(p_coordinates)
                             lon, lat, hi = p_coordinates.split(b",")
                             newMarker = Marker(lat, lon, p_name, p_description)
                             self.markers.append(newMarker)
@@ -865,7 +878,7 @@ class PyMapFrame(wx.Frame):
             dialog.description.SetValue(linestring.description)
             dialog.SetTitle("Edit LineString properties")
             val = dialog.ShowModal()
-            logging.debug("val=%d", str(val))
+            # logging.debug("val=%d", str(val))
             if val == dialog.ID_NEWPATH:
                 # coordinate=dialog.coordinates.GetValue()
                 #lat,lon = coordinate.split(",")
