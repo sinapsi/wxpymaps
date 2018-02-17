@@ -38,7 +38,7 @@ import marker_dialog
 import path_dialog
 
 logging.basicConfig(
-    filename='debug.log',
+    # filename='debug.log',
     format='%(levelname)s:%(threadName)s:%(funcName)s: %(message)s',
     level=logging.ERROR
 )
@@ -143,14 +143,15 @@ class Tile:
         dc.DrawText(str(x)+","+str(y), x*256,y*256)"""
         if(img is not None):
             self.image = wx.Image(img[0], wx.BITMAP_TYPE_ANY)
+            tilePxSize = 256*scale
             self.image = self.image.Scale(
-                256*scale, 256*scale, wx.IMAGE_QUALITY_HIGH
+                tilePxSize, tilePxSize, wx.IMAGE_QUALITY_HIGH
             ).ConvertToBitmap()
             a = dc.DrawBitmap(
-                self.image, x * 256 * scale, y * 256 * scale, False
+                self.image, x * tilePxSize, y * tilePxSize, False
             )
             dc.SetIdBounds(id, wx.Rect(
-                x * 256 * scale, y * 256 * scale, 256 * scale, 256 * scale
+                x * tilePxSize, y * tilePxSize, tilePxSize, tilePxSize
             ))
             frame.objids.append(id)
             return True
@@ -474,6 +475,7 @@ class PyMapFrame(wx.Frame):
         self.LookAt(lat, lon, self.zoom)
 
     def OnPaint(self, event):
+        logging.debug("Evento OnPaint")
         dc = wx.BufferedPaintDC(self.sw)
         self.sw.PrepareDC(dc)
         dc.Clear()
@@ -536,6 +538,7 @@ class PyMapFrame(wx.Frame):
         self.boundsdict = {}
 
         zoom = self.zoom
+        # self.tiles = collections.OrderedDict()  # for test purpose only
 
         # Crea il DC e lo prepara per il disegno.
         # self.dc = wx.PaintDC(self.sw)
@@ -549,58 +552,53 @@ class PyMapFrame(wx.Frame):
 
         # dc.Clear()
         # dc.BeginDrawing()
-
+        # mode = 'zoom_in'
         if(mode == 'zoom_in'):
             # se sto zoomando, prima stampo le tile del livello di zoom
             # precedente, scalate * 2
             first_zoom = zoom-1
+            zoom_levels = [first_zoom, zoom]
         else:
-            first_zoom = zoom
-        for index, zoom in enumerate([first_zoom, zoom]):
+            zoom_levels = [zoom]
+        for index, zoom in enumerate(zoom_levels):
             # logging.debug("ciclo disegnamappa %d", index)
             if(zoom >= 0):
 
                 maxX, maxY = self.sw.GetSize()
-                scale = 2 - index
+                scale = len(zoom_levels) - index
                 widthPxMap = 2**zoom*256
                 heightPxMap = 2**zoom*256
 
                 # calcolo l'indice del primo tile da scaricare
-                firstTileToDrawX = math.floor(minX / 256)
+                firstTileToDrawX = math.floor(minX / 256 / scale)
 
                 # calcolo quanti tile devono essere scaricati
-                numberOfTilesToDrawX = math.ceil(maxX / 256)
+                numberOfTilesToDrawX = math.ceil(maxX / 256 / scale)
                 lastTileTodrawX = min(
                     firstTileToDrawX + numberOfTilesToDrawX + 1, 2**zoom
                 )
 
                 # calcolo l'indice del primo tile da scaricare
-                firstTileToDrawY = math.floor(minY / 256)
+                firstTileToDrawY = math.floor(minY / 256 / scale)
 
                 # calcolo quanti tile devono essere scaricati
-                numberOfTilesToDrawY = math.ceil(maxY / 256)
+                numberOfTilesToDrawY = math.ceil(maxY / 256 / scale)
                 lastTileTodrawY = min(
                     firstTileToDrawY + numberOfTilesToDrawY + 1, 2**zoom
                 )
 
                 found = False
 
-                # logging.debug('dizionario tiles:')
-                for key, value in self.tiles.items():
-                    logging.debug("key: " + str(key) + ",value: " + str(value))
-
-                BufferSize = numberOfTilesToDrawX * numberOfTilesToDrawY
+                BufferSize = numberOfTilesToDrawX * numberOfTilesToDrawY * 4
                 for x in range(firstTileToDrawX, lastTileTodrawX):
                     for y in range(firstTileToDrawY, lastTileTodrawY):
                         # controllo se il tile e' gia' stato disegnato
-
                         chiave_tile = str(x) + "-" + str(y) + "-" + str(zoom)
-
                         if chiave_tile in self.tiles:
                             tile = self.tiles[chiave_tile]
                         else:
-                            logging.debug(
-                                "creazione tile %d,%d,%d", x, y, zoom)
+                            # logging.debug(
+                            #    "creazione tile %d,%d,%d", x, y, zoom)
                             tile = Tile(x, y, zoom)
 
                             # print "creato",newTile.tile
@@ -610,7 +608,7 @@ class PyMapFrame(wx.Frame):
                         if tile.drawlocaltile(self, dc, scale):
                             if tile.name not in self.tiles:
                                 self.tiles[tile.name] = tile
-                                if(len(self.tiles) > BufferSize*2):
+                                if(len(self.tiles) > BufferSize):
                                     self.tiles.popitem(False)
                         else:
                             # aggiungo alla coda il tile da scaricare
@@ -635,14 +633,12 @@ class PyMapFrame(wx.Frame):
 
         # Finisce le operazioni di disegno.
         # dc.EndDrawing() #deprecated
-        logging.debug("tile in memoria: %d", len(self.tiles))
+        # logging.debug("tile in memoria: %d", len(self.tiles))
         # time.sleep(0.5)
         self.Refresh()
 
     def Zoom(self, lat, lon, zoom, event=None):
         """metodo chiamato quando si esegue lo zoom"""
-        # elimino tile di troppo dal dictionary
-
         self.pdc.RemoveAll()
         """for t in self.tiles:
             self.pdc.RemoveId(t.id)
