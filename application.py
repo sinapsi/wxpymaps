@@ -901,7 +901,7 @@ class PyMapFrame(wx.Frame):
         if event.LeftDown():
             # se sono in modalità "disegna percorso":
             if self.mode == "path":
-                dc = wx.PaintDC(self.sw)
+                # dc = wx.PaintDC(self.sw)
                 # newmarker=Marker(lat,lon)
                 # self.markers.append(newmarker)
                 # newmarker.draw(self,dc)
@@ -911,6 +911,7 @@ class PyMapFrame(wx.Frame):
                 ls = LineString(path=self.tempPath)
                 ls.draw(self, self.pdc)
                 # print self.tempPath
+                self.Refresh()
             else:
 
                 # self.slider.SetValue(self.zoom)
